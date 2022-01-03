@@ -1,6 +1,6 @@
 #include <iostream>
 #include <iomanip>
-
+#include <cstring>
 using namespace std;
 
 #define AES_key_size 16
@@ -27,69 +27,27 @@ static const uint8_t sbox[256] = {
     0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16};
 
-// The round constant word array, Rcon[i], contains the values given by
-// x to the power (i-1) being powers of x (x is denoted as {02}) in the field GF(2^8)
 static const uint8_t Rcon[11] = {
     0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36};
 
-static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
+void printState(uint8_t *state);
+
+void key_handler(uint8_t *key, uint8_t round)
 {
-    unsigned i, j, k;
-    uint8_t tempa[4]; // Used for the column/row operations
 
-    // The first round key is the key itself.
-    for (i = 0; i < 16; i++)
+    uint8_t new_key[16];
+
+    new_key[0] = sbox[(key[13])] ^ Rcon[round] ^ key[0];
+    new_key[1] = sbox[(key[14])] ^ key[1];
+    new_key[2] = sbox[(key[15])] ^ key[2];
+    new_key[3] = sbox[(key[12])] ^ key[3];
+
+    for (int i = 4; i < 16; i++)
     {
-        RoundKey[i] = Key[i];
+        new_key[i] = key[i] ^ new_key[i - 4];
     }
-
-    // All other round keys are found from the previous round keys.
-    for (i = 4; i < 44; i++)
-    {
-        {
-            k = (i - 1) * 4;
-            tempa[0] = RoundKey[k + 0];
-            tempa[1] = RoundKey[k + 1];
-            tempa[2] = RoundKey[k + 2];
-            tempa[3] = RoundKey[k + 3];
-        }
-
-        if (i % 4 == 0)
-        {
-            // This function shifts the 4 bytes in a word to the left once.
-            // [a0,a1,a2,a3] becomes [a1,a2,a3,a0]
-
-            // Function RotWord()
-            {
-                const uint8_t u8tmp = tempa[0];
-                tempa[0] = tempa[1];
-                tempa[1] = tempa[2];
-                tempa[2] = tempa[3];
-                tempa[3] = u8tmp;
-            }
-
-            // SubWord() is a function that takes a four-byte input word and
-            // applies the S-box to each of the four bytes to produce an output word.
-
-            // Function Subword()
-            {
-                tempa[0] = sbox[(tempa[0])];
-                tempa[1] = sbox[(tempa[1])];
-                tempa[2] = sbox[(tempa[2])];
-                tempa[3] = sbox[(tempa[3])];
-            }
-
-            tempa[0] = tempa[0] ^ Rcon[i / 4];
-        }
-        j = i * 4;
-        k = (i - 4) * 4;
-        RoundKey[j + 0] = RoundKey[k + 0] ^ tempa[0];
-        RoundKey[j + 1] = RoundKey[k + 1] ^ tempa[1];
-        RoundKey[j + 2] = RoundKey[k + 2] ^ tempa[2];
-        RoundKey[j + 3] = RoundKey[k + 3] ^ tempa[3];
-    }
+    memcpy(key, &new_key, 16 * sizeof(uint8_t));
 }
-
 void add_round_key(uint8_t *state, uint8_t *key)
 {
     for (int i = 0; i < 16; i++)
@@ -123,70 +81,84 @@ void shift_rows(uint8_t *state)
     state[11] = state[7];
     state[7] = temp;
 }
-uint8_t GF_multi(uint8_t a, uint8_t b)
+
+uint8_t mul_2(uint8_t a)
 {
-    uint8_t result = 0;
-    for (; b; b >>= 1)
-    {
-        if (b & 1)
-            result ^= a;
-        bool MSB = a & 0x80; // check if the x^7 is present
-        a <<= 1;
-        if (MSB)
-            a ^= 0x1B;
-        // cout << int(a) << " " << int(b) << endl;
-    }
-    return result;
+    bool MSB = a & 0x80; // check if the x^7 is present
+    a <<= 1;
+    if (MSB)
+        a ^= 0x1B;
+    return a;
 }
+// uint8_t GF_multi(uint8_t a, uint8_t b)
+// {
+//     uint8_t result = 0;
+//     for (; b; b >>= 1)
+//     {
+//         if (b & 1)
+//             result ^= a;
+//         bool MSB = a & 0x80; // check if the x^7 is present
+//         a <<= 1;
+//         if (MSB)
+//             a ^= 0x1B;
+//     }
+//     return result;
+// }
 void mix_cols(uint8_t *state)
 {
     for (int i = 0; i < 16; i += 4)
     {
         uint8_t temp[4];
-        temp[0] = GF_multi(0x02, state[i]) ^ GF_multi(0x03, state[i + 1]) ^ state[i + 2] ^ state[i + 3];
-        temp[1] = GF_multi(0x02, state[i + 1]) ^ GF_multi(0x03, state[i + 2]) ^ state[i] ^ state[i + 3];
-        temp[2] = GF_multi(0x02, state[i + 2]) ^ GF_multi(0x03, state[i + 3]) ^ state[i] ^ state[i + 1];
-        temp[3] = GF_multi(0x02, state[i + 3]) ^ GF_multi(0x03, state[i]) ^ state[i + 2] ^ state[i + 1];
+        temp[0] = state[i + 1] ^ mul_2(state[i + 1] ^ state[i]) ^ state[i + 2] ^ state[i + 3];
+        temp[1] = mul_2(state[i + 1] ^ state[i + 2]) ^ state[i] ^ state[i + 3] ^ state[i + 2];
+        temp[2] = mul_2(state[i + 2] ^ state[i + 3]) ^ state[i] ^ state[i + 1] ^ state[i + 3];
+        temp[3] = mul_2(state[i + 3] ^ state[i]) ^ state[i + 2] ^ state[i + 1] ^ state[i];
         memcpy(&state[i], &temp, 4 * sizeof(uint8_t));
     }
 }
-
-void aes_cipher(uint8_t *data, uint8_t *key)
+void printState(uint8_t *state)
 {
-    uint8_t state[16];
-    memcpy(&state, data, 16 * sizeof(uint8_t));
-    uint8_t subkey[176];
-    KeyExpansion(subkey, key);
-    add_round_key(state, subkey);
-    // sub_bytes(state);
-    //     shift_rows(state);
-    //     mix_cols(state);
-    // add_round_key(state, &subkey[16]);
-
-    for (int i = 1; i < 10; i++)
-    {
-        sub_bytes(state);
-        shift_rows(state);
-        mix_cols(state);
-        add_round_key(state, &subkey[i * 16]);
-    }
-    sub_bytes(state);
-    shift_rows(state);
-    // // mix_cols(state);
-    add_round_key(state, &subkey[160]);
-
     for (int i = 0; i < 16; i += 4)
     {
         for (int j = i; j < i + 4; j++)
             cout << setfill('0') << setw(2) << hex << (int)state[j] << "  ";
         cout << endl;
     }
+    cout << endl;
+
+}
+void aes_cipher(uint8_t *data, uint8_t *key)
+{
+    uint8_t state[16], temp_key[16];
+    memcpy(&state, data, 16 * sizeof(uint8_t));
+    memcpy(&temp_key, key, 16 * sizeof(uint8_t));
+
+    uint8_t subkey[176];
+    add_round_key(state, temp_key);
+
+    for (uint8_t i = 1; i < 10; i++)
+    {
+        sub_bytes(state);
+        shift_rows(state);
+        mix_cols(state);
+        key_handler(temp_key, i);
+        add_round_key(state, temp_key);
+    }
+    sub_bytes(state);
+    shift_rows(state);
+    key_handler(temp_key, 10);
+    add_round_key(state, temp_key);
+
+    printState(state);
 }
 int main()
 {
     uint8_t key[] = {0x2b, 0x28, 0xab, 0x09, 0x7e, 0xae, 0xf7, 0xcf, 0x15, 0xd2, 0x15, 0x4f, 0x16, 0xa6, 0x88, 0x3c};
     uint8_t in[] = {0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97};
-    uint8_t txt[] = "himynameistudang HOw are you today";
+
+    // uint8_t txt[] = "himynameistudang HOw are you today";
+    uint8_t txt[] = {0xff, 0xca, 0x32, 0x58, 0x9a, 0xac, 0x55, 0x30, 0xf3, 0xc6, 0x3e, 0x5c, 0x9e, 0xa8, 0x51, 0x2c};
+
     uint8_t k[] = "abcdefghijklmnop";
     uint8_t alloc_size = sizeof(txt) - 1;
     if (alloc_size % 16)
@@ -197,10 +169,10 @@ int main()
 
     uint8_t *data_stream = (uint8_t *)calloc(alloc_size, sizeof(uint8_t));
     memcpy(data_stream, txt, sizeof(txt) * sizeof(uint8_t));
+
     for (uint8_t i = 0; i < alloc_size; i += 16)
     {
         // cout<<"round: "<<i/16<<endl;
         aes_cipher(&data_stream[i], k);
     }
-    // cout<<sizeof(txt)<<endl;
 }
