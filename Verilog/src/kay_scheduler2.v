@@ -20,7 +20,6 @@ module keyScheduler(
 
 
     always @(round_cnt) begin
-        $monitor("hejooo");
         if(round_cnt)
         begin
             rcon = {rcon[6 : 0], 1'b0} ^ (8'h1b & {8{rcon[7]}});

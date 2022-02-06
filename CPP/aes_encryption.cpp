@@ -1,10 +1,13 @@
 #include <iostream>
 #include <iomanip>
 #include <cstring>
-using namespace std;
+#include <string>
+#include <random>
+#include <bits/stdc++.h>
+#include <fstream>
+#include <iomanip>
 
-#define AES_key_size 16
-#define Total_subkeys 176 // 11*16 bytes
+using namespace std;
 
 typedef uint8_t aes_state[4][4];
 
@@ -90,20 +93,7 @@ uint8_t mul_2(uint8_t a)
         a ^= 0x1B;
     return a;
 }
-// uint8_t GF_multi(uint8_t a, uint8_t b)
-// {
-//     uint8_t result = 0;
-//     for (; b; b >>= 1)
-//     {
-//         if (b & 1)
-//             result ^= a;
-//         bool MSB = a & 0x80; // check if the x^7 is present
-//         a <<= 1;
-//         if (MSB)
-//             a ^= 0x1B;
-//     }
-//     return result;
-// }
+
 void mix_cols(uint8_t *state)
 {
     for (int i = 0; i < 16; i += 4)
@@ -125,12 +115,11 @@ void printState(uint8_t *state)
         cout << endl;
     }
     cout << endl;
-
 }
-void aes_cipher(uint8_t *data, uint8_t *key)
+void aes_cipher(uint8_t *data, uint8_t *key, uint8_t *state)
 {
-    uint8_t state[16], temp_key[16];
-    memcpy(&state, data, 16 * sizeof(uint8_t));
+    uint8_t /*state[16], */ temp_key[16];
+    memcpy(state, data, 16 * sizeof(uint8_t));
     memcpy(&temp_key, key, 16 * sizeof(uint8_t));
 
     uint8_t subkey[176];
@@ -149,18 +138,35 @@ void aes_cipher(uint8_t *data, uint8_t *key)
     key_handler(temp_key, 10);
     add_round_key(state, temp_key);
 
-    printState(state);
+    // printState(state);
 }
-int main()
+string rand_str(uint8_t size)
+{
+    string str("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+    random_device rd;
+    mt19937 generator(rd());
+
+    shuffle(str.begin(), str.end(), generator);
+
+    return str.substr(0, size);
+}
+
+void AES_gen_infinite_length(string str_char, string k)
 {
     uint8_t key[] = {0x2b, 0x28, 0xab, 0x09, 0x7e, 0xae, 0xf7, 0xcf, 0x15, 0xd2, 0x15, 0x4f, 0x16, 0xa6, 0x88, 0x3c};
     uint8_t in[] = {0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97};
+    if (k.length() != 16)
+    {
+        cout << "Invalid key length !!!" << endl;
 
+        return;
+    }
     // uint8_t txt[] = "himynameistudang HOw are you today";
-    uint8_t txt[] = {0xff, 0xca, 0x32, 0x58, 0x9a, 0xac, 0x55, 0x30, 0xf3, 0xc6, 0x3e, 0x5c, 0x9e, 0xa8, 0x51, 0x2c};
+    // uint8_t txt[] = {0xff, 0xca, 0x32, 0x58, 0x9a, 0xac, 0x55, 0x30, 0xf3, 0xc6, 0x3e, 0x5c, 0x9e, 0xa8, 0x51, 0x2c};
 
-    uint8_t k[] = "abcdefghijklmnop";
-    uint8_t alloc_size = sizeof(txt) - 1;
+    // string k = "abcdefghijklmnop";
+    // int size =  /
+    uint8_t alloc_size = str_char.length(); //sizeof(txt) - 1;
     if (alloc_size % 16)
     {
         alloc_size += 16;
@@ -168,11 +174,49 @@ int main()
     }
 
     uint8_t *data_stream = (uint8_t *)calloc(alloc_size, sizeof(uint8_t));
-    memcpy(data_stream, txt, sizeof(txt) * sizeof(uint8_t));
-
+    memcpy(data_stream, str_char.c_str(), str_char.length() * sizeof(uint8_t));
+    uint8_t state[16];
     for (uint8_t i = 0; i < alloc_size; i += 16)
     {
         // cout<<"round: "<<i/16<<endl;
-        aes_cipher(&data_stream[i], k);
+        aes_cipher(&data_stream[i], (uint8_t *)k.c_str(), state);
+        printState(state);
     }
+}
+void write_file(ofstream *file, uint8_t *data)
+{
+    for (int i = 0; i < 16; i++)
+        *file << hex << setw(2) << setfill('0') << (int)data[i];
+    *file << endl;
+}
+void AES_gen_test_case(int case_num, string plan_text_out, string key_out, string encrypted_out)
+{
+    ofstream plain_text;
+    ofstream key;
+    ofstream encrypted;
+    plain_text.open(plan_text_out);
+    key.open(key_out);
+    encrypted.open(encrypted_out);
+    uint8_t key_temp[16], data_temp[16], state_encrypted[16];
+    string temp;
+    for (int i = 0; i < case_num; i++)
+    {
+        temp = rand_str(32);
+        memcpy(&key_temp, temp.substr(0, 16).c_str(), 16 * sizeof(uint8_t));
+        memcpy(&data_temp, temp.substr(16, 32).c_str(), 16 * sizeof(uint8_t));
+        aes_cipher(data_temp, key_temp, state_encrypted);
+        write_file(&plain_text, data_temp);
+        write_file(&key, key_temp);
+        write_file(&encrypted,state_encrypted);
+        // (*key) = reinterpret_cast<const uint8_t*>(temp.substr(0,16).c_str());
+    }
+    plain_text.close();
+    key.close();
+    encrypted.close();
+}
+int main()
+{
+    // AES_gen_infinite_length("himynameistudang HOw are you today", "abcdefghijklmnop");
+    AES_gen_test_case(100, "plan_text_out", "key_out", "encrypted_out");
+    return 0;
 }
