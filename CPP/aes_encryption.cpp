@@ -122,7 +122,6 @@ void aes_cipher(uint8_t *data, uint8_t *key, uint8_t *state)
     memcpy(state, data, 16 * sizeof(uint8_t));
     memcpy(&temp_key, key, 16 * sizeof(uint8_t));
 
-    uint8_t subkey[176];
     add_round_key(state, temp_key);
 
     for (uint8_t i = 1; i < 10; i++)
@@ -166,7 +165,7 @@ void AES_gen_infinite_length(string str_char, string k)
 
     // string k = "abcdefghijklmnop";
     // int size =  /
-    uint8_t alloc_size = str_char.length(); //sizeof(txt) - 1;
+    size_t alloc_size = str_char.length(); // was uint8_t: wrapped for inputs over 255 bytes
     if (alloc_size % 16)
     {
         alloc_size += 16;
@@ -176,12 +175,13 @@ void AES_gen_infinite_length(string str_char, string k)
     uint8_t *data_stream = (uint8_t *)calloc(alloc_size, sizeof(uint8_t));
     memcpy(data_stream, str_char.c_str(), str_char.length() * sizeof(uint8_t));
     uint8_t state[16];
-    for (uint8_t i = 0; i < alloc_size; i += 16)
+    for (size_t i = 0; i < alloc_size; i += 16)
     {
         // cout<<"round: "<<i/16<<endl;
         aes_cipher(&data_stream[i], (uint8_t *)k.c_str(), state);
         printState(state);
     }
+    free(data_stream);
 }
 void write_file(ofstream *file, uint8_t *data)
 {
